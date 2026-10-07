@@ -54,12 +54,23 @@ FULL = [(r, c) for r in range(3) for c in range(3)]  # 4.5, pays 5x
 
 Now "a pattern" is just a list of cells that must all hold the same symbol.
 
+**Two short names for the shapes of data**, used in the type hints (the `: Column` and `-> Fraction` parts of each function):
+
+```python
+Column = list[int]      # the long list of symbols behind one column
+Grid = list[list[int]]  # the 3x3 window, grid[row][col]
+```
+
+Type hints don't change what the code does. They only say what goes in and what comes out, so
+`def window(column: Column, stop: int) -> tuple[int, ...]` reads as: "give it a column list and a stop
+position, and it gives back a few symbols".
+
 ---
 
 ## Step 2: one column stops → which 3 symbols show
 
 ```python
-def window(column, stop):
+def window(column: Column, stop: int) -> tuple[int, ...]:
     """The 3 symbols a column shows when it lands on `stop` (it wraps around)."""
     return tuple(column[(stop + r) % len(column)] for r in range(3))
 ```
@@ -84,7 +95,7 @@ These match the table in `intuition.md`, so this step is checked.
 First, a helper that answers: "Do all these cells hold the same symbol? If so, which one?"
 
 ```python
-def same_symbol(grid, cells):
+def same_symbol(grid: Grid, cells: list[tuple[int, int]]) -> int | None:
     """The symbol if all cells match, else None."""
     syms = {grid[r][c] for r, c in cells}
     return syms.pop() if len(syms) == 1 else None
@@ -96,7 +107,7 @@ one item, so they all match. If the cells hold `2` and `0`, the set is `{2, 0}`,
 Then the scorer checks all five patterns and adds up the winnings:
 
 ```python
-def payout(grid):
+def payout(grid: Grid) -> Fraction:
     """Payout per 1 unit of bet for a 3x3 grid (grid[row][col]). Wins add up."""
     total = Fraction(0)
     for cells in SQUARES:                  # four 2×2 squares: pay 1 × multiplier
@@ -160,7 +171,7 @@ So instead of trying every stop, `evaluate()`:
 2. loops over the **different views** only, and gives each grid a **weight** = how many spins show it.
 
 ```python
-def evaluate(columns):
+def evaluate(columns: list[Column]) -> tuple[Fraction, Fraction]:
     views = [Counter(window(column, s) for s in range(len(column))) for column in columns]
     total_spins = len(columns[0]) * len(columns[1]) * len(columns[2])
     paid, wins = Fraction(0), 0
@@ -186,7 +197,7 @@ Only then write the fast version and check that it gives the same answer.
 This is the only step that contains **the solution idea**. Everything else is just the game and the checker.
 
 ```python
-def build_columns(pairs=19, length=80):
+def build_columns(pairs: int = 19, length: int = 80) -> list[Column]:
     if 3 * pairs > length:
         raise ValueError(f"{pairs} pairs need {3 * pairs} symbols (2, 2, separator each), but length is {length}")
     filler = [0, 1, 3, 4]
@@ -215,7 +226,7 @@ middle:        2 2 2
 `evaluate()` is exact, but it's still our own code. A second check that works differently catches mistakes in it:
 
 ```python
-def simulate(columns, spins=200_000, seed=1337):
+def simulate(columns: list[Column], spins: int = 200_000, seed: int = 1337) -> tuple[float, float]:
     """Random check: actually spin the machine many times and count."""
     rng = random.Random(seed)                   # fixed seed → same result every run
     paid, wins = 0.0, 0
