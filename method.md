@@ -59,6 +59,7 @@ Now "a pattern" is just a list of cells that must all hold the same symbol.
 ```python
 Column = list[int]      # the long list of symbols behind one column
 Grid = list[list[int]]  # the 3x3 window, grid[row][col]
+Rule = Literal["sum", "max"]  # how several wins on one spin are paid (see Step 3)
 ```
 
 Type hints don't change what the code does. They only say what goes in and what comes out, so
@@ -104,21 +105,27 @@ def same_symbol(grid: Grid, cells: list[tuple[int, int]]) -> int | None:
 The trick: a **set** (`{...}`) keeps only distinct values. If every cell is `2`, the set is `{2}`, which has
 one item, so they all match. If the cells hold `2` and `0`, the set is `{2, 0}`, so they don't.
 
-Then the scorer checks all five patterns and adds up the winnings:
+Then the scorer checks all five patterns and collects the winnings:
 
 ```python
-def payout(grid: Grid) -> Fraction:
-    """Payout per 1 unit of bet for a 3x3 grid (grid[row][col]). Wins add up."""
-    total = Fraction(0)
+def payout(grid: Grid, rule: Rule = "sum") -> Fraction:
+    if rule not in ("sum", "max"):
+        raise ValueError(f'rule must be "sum" or "max", not {rule!r}')
+    wins = []
     for cells in SQUARES:                  # four 2×2 squares: pay 1 × multiplier
         s = same_symbol(grid, cells)
         if s is not None:
-            total += MULT[s]
+            wins.append(MULT[s])
     s = same_symbol(grid, FULL)            # full 3×3: pays 5 × multiplier
     if s is not None:
-        total += 5 * MULT[s]
-    return total
+        wins.append(5 * MULT[s])
+    return sum(wins, Fraction(0)) if rule == "sum" else max(wins, default=Fraction(0))
 ```
+
+The homework doesn't say how several wins on one spin are paid, so `rule` picks one reading:
+`"sum"` (the default) adds them all up, `"max"` pays only the biggest one. Anything else, such as
+a typo like `"Sum"`, raises an error instead of silently picking a reading.
+[Section 8 of `intuition.md`](intuition.md#8-what-if-only-the-biggest-win-pays) explains why each reading needs its own design.
 
 Example:
 
@@ -171,7 +178,7 @@ So instead of trying every stop, `evaluate()`:
 2. loops over the **different views** only, and gives each grid a **weight** = how many spins show it.
 
 ```python
-def evaluate(columns: list[Column]) -> tuple[Fraction, Fraction]:
+def evaluate(columns: list[Column], rule: Rule = "sum") -> tuple[Fraction, Fraction]:
     views = [Counter(window(column, s) for s in range(len(column))) for column in columns]
     total_spins = len(columns[0]) * len(columns[1]) * len(columns[2])
     paid, wins = Fraction(0), 0
@@ -179,7 +186,7 @@ def evaluate(columns: list[Column]) -> tuple[Fraction, Fraction]:
         for b, nb in views[1].items():
             for c, nc in views[2].items():
                 n = na * nb * nc  # how many spins show this grid
-                p = payout([[a[r], b[r], c[r]] for r in range(3)])
+                p = payout([[a[r], b[r], c[r]] for r in range(3)], rule)
                 paid += n * p
                 wins += n if p > 0 else 0
     return paid / total_spins, Fraction(wins, total_spins)   # (RTP, win rate)
@@ -219,6 +226,17 @@ middle:        2 2 2
 - The first check stops you from asking for more pairs than fit: each pair takes 3 symbols (`2 2 x`).
 - `filler[i % 4]` rotates through 0, 1, 3, 4 so the separators vary.
 
+**A second design, for `rule="max"`.** If only the biggest win pays, pairs alone can't reach 0.95, so
+`build_columns_max_rule()` returns three short fixed lists that also contain `2 2 2`:
+
+```python
+left   = [2, 2, 2, 0, 0]
+middle = [2, 2, 2]
+right  = [2, 2, 2, 0, 2, 2, 0, 0]
+```
+
+Checked with `evaluate(build_columns_max_rule(), rule="max")`: RTP exactly 0.95, win rate 85%.
+
 ---
 
 ## Step 6: check by actually playing
@@ -226,13 +244,13 @@ middle:        2 2 2
 `evaluate()` is exact, but it's still our own code. A second check that works differently catches mistakes in it:
 
 ```python
-def simulate(columns: list[Column], spins: int = 200_000, seed: int = 1337) -> tuple[float, float]:
+def simulate(columns: list[Column], spins: int = 200_000, seed: int = 1337, rule: Rule = "sum") -> tuple[float, float]:
     """Random check: actually spin the machine many times and count."""
     rng = random.Random(seed)                   # fixed seed → same result every run
     paid, wins = 0.0, 0
     for _ in range(spins):
         cols = [window(column, rng.randrange(len(column))) for column in columns]   # random stop per column
-        p = float(payout([[cols[0][r], cols[1][r], cols[2][r]] for r in range(3)]))
+        p = float(payout([[cols[0][r], cols[1][r], cols[2][r]] for r in range(3)], rule))
         paid += p
         wins += p > 0
     return paid / spins, wins / spins
@@ -257,6 +275,10 @@ one that proves the rule, and `simulate()` is only a sanity check.
 | `test_evaluate_trivial_machine` | Step 4: a machine where every spin wins gives the RTP we expect |
 | `test_design_meets_requirements` | Step 5: our design gives RTP exactly 0.95 and win rate ≥ 55% |
 | `test_too_many_pairs_is_rejected` | Step 5: asking for more pairs than fit gives an error |
+| `test_biggest_win_only_rule_pays_the_largest_pattern` | Step 3: with `rule="max"`, only the biggest win pays |
+| `test_max_rule_design_meets_requirements` | Step 5: the second design gives RTP exactly 0.95 under `rule="max"` |
+| `test_unknown_rule_is_rejected` | Step 3: a misspelled `rule` raises an error |
+| `test_simulate_follows_the_rule` | Step 6: the random check uses the same `rule` |
 
 ---
 
@@ -267,7 +289,7 @@ uv init --bare          # create the project (pyproject.toml)
 uv add --dev pytest     # add the test tool
 
 uv run slot.py          # print the column lists, exact RTP / win rate, simulation
-uv run pytest -q        # run all 7 tests
+uv run pytest -q        # run all 11 tests
 ```
 
 Expected output of `uv run slot.py` (after the three column lists):
@@ -276,6 +298,9 @@ Expected output of `uv run slot.py` (after the three column lists):
 exact   RTP      = 19/20 = 0.950000  (bet 100 -> expect 95 back)
 exact   win rate = 1159/1600 = 0.724375
 sim     RTP      = 0.9507, win rate = 0.7255  (200k spins)
+
+rule=max design: RTP = 19/20 = 0.950000, win rate = 17/20 = 0.850000
+sim     RTP      = 0.9505, win rate = 0.8497  (200k spins)
 
 all requirements met ✓
 ```

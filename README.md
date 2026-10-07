@@ -38,7 +38,7 @@ Needs [uv](https://docs.astral.sh/uv/). Only the Python standard library, plus p
 
 ```bash
 uv run slot.py        # print the column lists, exact RTP / win rate, random check
-uv run pytest -q      # run the 7 tests
+uv run pytest -q      # run the 11 tests
 ```
 
 Expected output of `uv run slot.py` (after the three column lists):
@@ -48,11 +48,21 @@ exact   RTP      = 19/20 = 0.950000  (bet 100 -> expect 95 back)
 exact   win rate = 1159/1600 = 0.724375
 sim     RTP      = 0.9507, win rate = 0.7255  (200k spins)
 
+rule=max design: RTP = 19/20 = 0.950000, win rate = 17/20 = 0.850000
+sim     RTP      = 0.9505, win rate = 0.8497  (200k spins)
+
 all requirements met ✓
 ```
 
 ## Assumptions
 
 1. Each spin stops each column at a random position, independently, and every position is equally likely.
-2. When several patterns win on one spin, **the wins add up**. The design depends on this.
+2. **The homework doesn't say how several wins on one spin are paid**, so the code supports both readings:
+
+   | reading | design | RTP | win rate |
+   |---|---|---|---|
+   | all wins add up (default, usual slot convention) | `build_columns()`: 19 pairs in 80 | 0.95 | 72.4% |
+   | only the biggest win pays | `build_columns_max_rule()`: 5 / 3 / 8 symbols | 0.95 | 85% |
+
+   With the middle column all 2s, no single design works for both; see [`intuition.md` section 8](intuition.md#8-what-if-only-the-biggest-win-pays).
 3. A "win" means at least one pattern wins on that spin.

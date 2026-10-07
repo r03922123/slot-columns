@@ -249,8 +249,45 @@ produce it. That gives the same answer as checking all 19,200 spins, much faster
 
 ---
 
+## 8. What if only the biggest win pays?
+
+The homework doesn't say what happens when **several patterns win on the same spin**. Three readings:
+
+| reading | our design above |
+|---|---|
+| all wins add up | ✓ RTP 0.95 (what sections 4–5 assume) |
+| the 3×3 pays instead of its four squares | ✓ same numbers: our 3×3 never happens |
+| **only the biggest win pays** | ✗ RTP 0.724 |
+
+**Why the last one fails.** On some spins a square on the left *and* a square on the right win together.
+"Add up" pays 2 for that spin, but "biggest only" pays 1. With pairs only, a spin can pay at most 1,
+so the payout can't be bigger than the win rate, and the win rate tops out at 8/9 ≈ 0.889.
+
+**The fix: allow `2 2 2` so the 3×3 (pays 5) can happen.** A small design that works:
+
+```
+left column:    2 2 2 0 0             (5 symbols)
+middle column:  2 2 2
+right column:   2 2 2 0 2 2 0 0       (8 symbols)
+```
+
+Count it the same way as before: 5 × 3 × 8 = **120 possible spins**.
+
+- Left column shows a `2, 2` somewhere at **3 of 5** stops (`2 2 2`, `2 2 0`, and `0 2 2` when it wraps). Misses at 2.
+- Right column shows a `2, 2` somewhere at **5 of 8** stops. Misses at 3.
+- Losing spins = 2 × 3 × 3 = **18** → winning spins = 120 − 18 = **102** → win rate = 102 ÷ 120 = **85%** ✓
+- Both sides show `2 2 2` (the 3×3 wins) at 1 × 3 × 1 = **3** spins. Those pay 5 instead of 1: **4 extra** each.
+- Total paid = 102 + 3 × 4 = **114** → RTP = 114 ÷ 120 = **0.95** ✓
+
+**Why not one design for every reading?** With the middle column all 2s, there isn't one.
+"Add up" and "3×3 instead" only agree if the 3×3 never happens. Without the 3×3, "add up" and "biggest only"
+only agree if one side column never wins, and then the payout is at most 2/3. So each reading gets its own
+design, and the code takes the reading as an option (`rule="sum"` or `rule="max"`).
+
+---
+
 ## In one line
 
 **The middle column always shows 2, 2, 2, so a square wins whenever the left or right column shows 2, 2
 beside it. With 19 pairs in an 80-symbol list, each square wins 23.75% of the time: 4 × 0.2375 = 0.95 paid back,
-and 72.4% of spins win.**
+and 72.4% of spins win.** (If only the biggest win pays, use the small design in section 8 instead.)

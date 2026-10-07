@@ -31,6 +31,7 @@ Run:  uv run slot.py
 import random
 from collections import Counter
 from fractions import Fraction
+from typing import Literal
 
 # symbol -> multiplier, as exact fractions so RTP comes out exact (no float fuzz)
 MULT = {0: Fraction(1, 4), 1: Fraction(11, 20), 2: Fraction(1), 3: Fraction(3), 4: Fraction(5)}
@@ -46,6 +47,7 @@ FULL = [(r, c) for r in range(3) for c in range(3)]  # 4.5, pays 5x
 
 Column = list[int]      # the long list of symbols behind one column
 Grid = list[list[int]]  # the 3x3 window, grid[row][col]
+Rule = Literal["sum", "max"]  # how several wins on one spin are paid
 
 # -----------------------------------------------------------------------------
 # the game
@@ -59,22 +61,28 @@ def same_symbol(grid: Grid, cells: list[tuple[int, int]]) -> int | None:
     syms = {grid[r][c] for r, c in cells}
     return syms.pop() if len(syms) == 1 else None
 
-def payout(grid: Grid) -> Fraction:
-    """Payout per 1 unit of bet for a 3x3 grid (grid[row][col]). Wins add up."""
-    total = Fraction(0)
+def payout(grid: Grid, rule: Rule = "sum") -> Fraction:
+    """
+    Payout per 1 unit of bet for a 3x3 grid (grid[row][col]).
+    The homework doesn't say how several wins on one spin are paid:
+    rule="sum" adds them all up, rule="max" pays only the biggest one.
+    """
+    if rule not in ("sum", "max"):
+        raise ValueError(f'rule must be "sum" or "max", not {rule!r}')
+    wins = []
     for cells in SQUARES:
         s = same_symbol(grid, cells)
         if s is not None:
-            total += MULT[s]
+            wins.append(MULT[s])
     s = same_symbol(grid, FULL)
     if s is not None:
-        total += 5 * MULT[s]
-    return total
+        wins.append(5 * MULT[s])
+    return sum(wins, Fraction(0)) if rule == "sum" else max(wins, default=Fraction(0))
 
 # -----------------------------------------------------------------------------
 # exact evaluation: enumerate every spin
 
-def evaluate(columns: list[Column]) -> tuple[Fraction, Fraction]:
+def evaluate(columns: list[Column], rule: Rule = "sum") -> tuple[Fraction, Fraction]:
     """
     Exact (RTP, win_rate) as Fractions, counted over every possible spin.
     Many stops show the same 3 symbols, so instead of trying every stop we count
@@ -87,18 +95,18 @@ def evaluate(columns: list[Column]) -> tuple[Fraction, Fraction]:
         for b, nb in views[1].items():
             for c, nc in views[2].items():
                 n = na * nb * nc  # how many spins show this grid
-                p = payout([[a[r], b[r], c[r]] for r in range(3)])
+                p = payout([[a[r], b[r], c[r]] for r in range(3)], rule)
                 paid += n * p
                 wins += n if p > 0 else 0
     return paid / total_spins, Fraction(wins, total_spins)
 
-def simulate(columns: list[Column], spins: int = 200_000, seed: int = 1337) -> tuple[float, float]:
+def simulate(columns: list[Column], spins: int = 200_000, seed: int = 1337, rule: Rule = "sum") -> tuple[float, float]:
     """Random check: actually spin the machine many times and count."""
     rng = random.Random(seed)
     paid, wins = 0.0, 0
     for _ in range(spins):
         cols = [window(column, rng.randrange(len(column))) for column in columns]
-        p = float(payout([[cols[0][r], cols[1][r], cols[2][r]] for r in range(3)]))
+        p = float(payout([[cols[0][r], cols[1][r], cols[2][r]] for r in range(3)], rule))
         paid += p
         wins += p > 0
     return paid / spins, wins / spins
@@ -122,6 +130,18 @@ def build_columns(pairs: int = 19, length: int = 80) -> list[Column]:
     middle = [2, 2, 2]
     return [side, middle, side]
 
+def build_columns_max_rule() -> list[Column]:
+    """
+    The design for rule="max" (only the biggest win pays). Pairs alone can't
+    reach 0.95 there, so each side also has one "2 2 2" run: when both sides
+    show 2,2,2 the full 3x3 pays 5. Counting all 5 * 3 * 8 = 120 spins:
+    RTP = 114/120 = 0.95 exactly, win rate = 102/120 = 0.85.
+    """
+    left = [2, 2, 2, 0, 0]
+    middle = [2, 2, 2]
+    right = [2, 2, 2, 0, 2, 2, 0, 0]
+    return [left, middle, right]
+
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -140,4 +160,12 @@ if __name__ == "__main__":
         raise SystemExit("FAILED: RTP must be exactly 0.95")
     if win_rate < Fraction(55, 100):
         raise SystemExit("FAILED: win rate must be >= 55%")
+
+    # if only the biggest win on a spin pays, use the second design
+    rtp, win_rate = evaluate(build_columns_max_rule(), rule="max")
+    sim_rtp, sim_win = simulate(build_columns_max_rule(), rule="max")
+    print(f"\nrule=max design: RTP = {rtp} = {float(rtp):.6f}, win rate = {win_rate} = {float(win_rate):.6f}")
+    print(f"sim     RTP      = {sim_rtp:.4f}, win rate = {sim_win:.4f}  (200k spins)")
+    if rtp != Fraction(95, 100) or win_rate < Fraction(55, 100):
+        raise SystemExit("FAILED: rule=max design")
     print("\nall requirements met ✓")
